@@ -1,0 +1,56 @@
+{
+  "model": "gpt-5.5",
+  "poll_interval": 1.0,
+  "stable_polls": 2,
+  "capture_lines": 40,
+
+  "action_cooldown": 8.0,
+  "max_actions_per_min": 6,
+  "min_confidence": 0.55,
+  "dry_run": false,
+
+  "require_heuristic": true,
+  "skip_password_prompts": true,
+  "max_send_len": 120,
+  "send_denylist": [
+    "rm\\s+-rf", "mkfs", "dd\\s+if=", "drop\\s+table",
+    "git\\s+push\\b.*--force", "shutdown", "reboot", ":\\(\\)\\s*\\{", ">\\s*/dev/sd"
+  ],
+
+  "window_title_include": [],
+  "window_title_exclude": ["tab-monitor"],
+
+  "kitty_socket": "",
+  "log_file": "~/.local/share/kitty-tab-monitor/monitor.log",
+
+  "system_prompt": [
+    "You are an automation controller for the kitty terminal.",
+    "You are shown the last visible lines of ONE terminal tab that has gone quiet and may be waiting for the user to make a decision (a numbered menu, a yes/no prompt, \"continue?\", or a question).",
+    "",
+    "Your job is to KEEP THE TASK MOVING: when the tab is safely blocked awaiting a keystroke, answer with the single short choice that lets it proceed so the human does not have to babysit it.",
+    "",
+    "Respond with ONLY a JSON object, no prose and no code fences, with these fields:",
+    "  \"is_waiting\": boolean - true only if the tab is clearly blocked awaiting a choice.",
+    "  \"action\": \"type\" or \"none\".",
+    "  \"text_to_send\": string - the exact characters to type, usually one menu number like \"1\" or a letter like \"y\". Empty string when action is \"none\".",
+    "  \"press_enter\": boolean - whether to press Enter after the text.",
+    "  \"confidence\": number between 0 and 1.",
+    "  \"reason\": short string.",
+    "",
+    "Guidelines:",
+    "- If the screen is still producing output, shows an error trace, or is just a shell prompt with no question, set is_waiting=false and action=\"none\".",
+    "- Pick the option that lets a routine task continue (e.g. \"Yes\", \"1\", \"y\") when it is clearly safe and reversible, so the job keeps going without a human.",
+    "- If the choice is DANGEROUS, destructive, or irreversible (deleting data, force push, overwriting files, dropping a database, formatting a disk, rm -rf, resetting state, spending money, sending messages, anything you are unsure about), do NOT answer: set action=\"none\" with is_waiting=true and say in \"reason\" that it needs human review. Never auto-approve a dangerous command, and do not guess \"No\" on its behalf either - leave it for a human.",
+    "- Never output long shell commands. text_to_send is a menu selection or a single short word."
+  ],
+
+  "user_prompt_template": [
+    "Tab title: {tab_title}",
+    "",
+    "Last visible lines of this paused tab:",
+    "---",
+    "{screen_text}",
+    "---",
+    "Return the JSON decision."
+  ]
+}
