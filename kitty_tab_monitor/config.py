@@ -62,11 +62,13 @@ class Config:
 
     # --- plumbing ---
     kitty_socket: str = ""                      # e.g. unix:/tmp/kitty-1234; "" = inherit KITTY_LISTEN_ON
+    kitty_rc_password: str = ""                 # usually from KITTY_RC_PASSWORD env
     log_file: str = "~/.local/share/kitty-tab-monitor/monitor.log"
 
     # --- prompts (may be given as a list of lines in config.json; joined on load) ---
     system_prompt: str = ""                     # "" => llm.py DEFAULT_SYSTEM_PROMPT
-    user_prompt_template: str = ""              # "" => llm.py DEFAULT_USER_TEMPLATE; {tab_title}/{screen_text}
+    # Default template tokens: {tab_title}, {workspace}, {cwd}, and {screen_text}.
+    user_prompt_template: str = ""
 
     @classmethod
     def load(cls, path: str | None = None) -> "Config":
@@ -92,6 +94,7 @@ class Config:
         cfg.openai_base_url = env.get("OPENAI_BASE_URL", cfg.openai_base_url)
         cfg.model = env.get("KTM_MODEL", cfg.model)
         cfg.kitty_socket = env.get("KTM_SOCKET", env.get("KITTY_LISTEN_ON", cfg.kitty_socket))
+        cfg.kitty_rc_password = env.get("KITTY_RC_PASSWORD", cfg.kitty_rc_password)
         if "KTM_DRY_RUN" in env:
             cfg.dry_run = str(env["KTM_DRY_RUN"]).strip().lower() in ("1", "true", "yes", "on")
         return cfg

@@ -15,6 +15,8 @@ class Guard:
     def send_allowed(self, text: str):
         if len(text) > self.cfg.max_send_len:
             return False, f"text too long ({len(text)} > {self.cfg.max_send_len})"
+        if text and not text.isprintable():
+            return False, "text contains control characters"
         for pat in self.deny:
             if pat.search(text):
                 return False, f"matches denylist /{pat.pattern}/"
