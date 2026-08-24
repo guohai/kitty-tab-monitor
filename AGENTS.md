@@ -16,8 +16,15 @@ best safe choice, and sends that choice to the exact kitty window.
 - Treat broad, ambiguous, or potentially unsafe persistent permission as unsafe and fall
   back to one-time approval.
 - Creating, modifying, and removing files inside the monitored tab's workspace is safe.
-- Hold for human review before modifying or removing files outside the workspace. Resolve
-  relative paths from the tab's current directory; ambiguous paths require review.
+- A clearly local Docker test-database reset or cleanup is safe when it is part of a local
+  test or gate workflow, including scoped SQL `DELETE` statements. Production, remote,
+  shared, and ambiguously targeted database deletion requires human review.
+- Writes under `~/.claude/jobs/*/tmp/*` are safe test/job artifacts. Prefer persistent
+  permission only when it is scoped to the exact matching job `tmp` directory. Broader
+  access to `~/.claude` is unsafe; fall back to a safe one-time approval when available.
+- Apart from that exact Claude job artifact exception, hold for human review before
+  modifying or removing files outside the workspace. Resolve relative paths from the tab's
+  current directory; ambiguous paths require review.
 - A `kill` command is safe when every target is a numeric PID greater than or equal to
   1000. PID 1, any PID below 1000, name-based kills, and system-wide kills require review.
 - Hold for human review before rebooting, restarting, or shutting down the host system, or

@@ -29,6 +29,11 @@ _PASSWORD_PATTERNS = [
     re.compile(r"(?i)\benter\b.*\b(password|passphrase|pin)\b"),
 ]
 
+_TMUX_STATUS_LINE = re.compile(
+    r"^\[[^\]\r\n]+\]\d+:\S.*\b\d{1,2}:\d{2}"
+    r"(?:\s+\d{1,2}-[A-Za-z]{3}-\d{2,4})?\s*$"
+)
+
 
 def _tail(text: str, n: int) -> str:
     lines = [ln.rstrip() for ln in text.splitlines()]
@@ -37,8 +42,20 @@ def _tail(text: str, n: int) -> str:
     return "\n".join(lines[-n:])
 
 
+def _stable_tail(text: str, n: int) -> str:
+    """Remove a changing tmux status line before hashing terminal content."""
+    lines = [line.rstrip() for line in text.splitlines()]
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if lines and _TMUX_STATUS_LINE.match(lines[-1]):
+        lines.pop()
+        while lines and not lines[-1].strip():
+            lines.pop()
+    return "\n".join(lines[-n:])
+
+
 def signature(text: str, n: int) -> str:
-    return hashlib.sha1(_tail(text, n).encode()).hexdigest()
+    return hashlib.sha1(_stable_tail(text, n).encode()).hexdigest()
 
 
 def looks_like_decision(text: str, n: int = 15):

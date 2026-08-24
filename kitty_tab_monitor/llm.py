@@ -39,6 +39,14 @@ Guidelines:
 prompt with no question, set is_waiting=false and action="none".
 - Pick the best option that keeps a safe task moving (e.g. "Yes", "1", "y"). Creating, \
 modifying, or removing files inside the stated Workspace is allowed.
+- Treat a command that clearly resets or cleans a local Docker test database as safe when it \
+is part of a local test or gate workflow, including scoped SQL DELETE statements. This \
+exception never applies to a production, remote, shared, or ambiguously targeted database; \
+hold those operations for human review.
+- Writes under ~/.claude/jobs/*/tmp/* are safe test/job artifacts even though they are outside \
+the Workspace. When offered persistent permission scoped to the exact matching job tmp \
+directory, prefer it. Broader access to ~/.claude is unsafe; use a safe one-time approval \
+when one is available, otherwise hold for human review.
 - A kill command targeting only numeric PIDs greater than or equal to 1000 is safe: stopping \
 those processes does not modify or remove files. Approve it even when process ownership or \
 purpose is not shown. A kill targeting PID 1, any PID below 1000, process names, or all \
@@ -51,7 +59,8 @@ process are also safe.
   3. Only when neither approval is safe, set action="none" and is_waiting=true for human review.
 - A persistent permission with broad, ambiguous, or potentially unsafe scope is not safe; \
 fall back to the one-time approval instead.
-- Do not act when a choice would modify or remove files outside the Workspace; reboot, \
+- Apart from the exact Claude job tmp artifact exception above, do not act when a choice \
+would modify or remove files outside the Workspace; reboot, \
 restart, or shut down the host system; or perform a system-wide destructive operation such \
 as formatting a disk or terminating a critical system process. Set action="none" and \
 is_waiting=true so a human can review it.

@@ -7,6 +7,7 @@ import os
 import re
 import time
 
+from . import __build_date__, __version__
 from .detector import StabilityTracker, _tail, looks_like_decision, looks_like_password
 from .kitty_rc import KittyRC, iter_windows
 from .llm import decide
@@ -93,7 +94,8 @@ class Monitor:
 
     # --- lifecycle ---------------------------------------------------------
     def run(self) -> None:
-        self.log(f"starting: model={self.cfg.model} dry_run={self.cfg.dry_run} "
+        self.log(f"starting: version={__version__} build_date={__build_date__} "
+                 f"model={self.cfg.model} dry_run={self.cfg.dry_run} "
                  f"poll={self.cfg.poll_interval}s "
                  f"socket={self.cfg.kitty_socket or '(auto-discover)'}")
         while True:
@@ -112,14 +114,23 @@ class Monitor:
             if not self._title_ok(title):
                 continue
 
-            text = self.rc.get_text(wid, extent="screen")
+            try:
+                text = self.rc.get_text(wid, extent="screen")
+            except Exception as e:  # noqa: BLE001 - retry this window next poll
+                self.log(f"[win {wid}] screen read error -> retrying: {e}")
+                continue
+            if not text.strip():
+                self.log(f"[win {wid}] screen read returned empty -> retrying")
+                continue
+
             st, sig = self.tracker.update(wid, text)
 
             if not self.tracker.is_paused(st):
                 continue
             if sig == st.last_handled_sig:
                 continue  # already dealt with this exact screen
-            if time.monotonic() - st.last_action_ts < self.cfg.action_cooldown:
+            if (st.last_action_ts and
+                    time.monotonic() - st.last_action_ts < self.cfg.action_cooldown):
                 continue
             if self.cfg.skip_password_prompts and looks_like_password(text):
                 self.log(

@@ -95,6 +95,19 @@ class KittyRCTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "KITTY_PUBLIC_KEY"):
             KittyRC(socket="unix:/tmp/kitty-123").ls()
 
+    @patch("kitty_tab_monitor.kitty_rc.subprocess.run")
+    def test_get_text_failure_includes_window_and_stderr(self, run):
+        run.return_value = SimpleNamespace(
+            returncode=1,
+            stdout=b"",
+            stderr=b"Error: target window not found",
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError, "window 17: Error: target window not found"
+        ):
+            KittyRC(socket="unix:/tmp/kitty-123").get_text(17)
+
 
 if __name__ == "__main__":
     unittest.main()

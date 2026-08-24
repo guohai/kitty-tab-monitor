@@ -42,6 +42,11 @@ class PromptTests(unittest.TestCase):
         user_prompt = request["messages"][1]["content"]
         self.assertIn("PIDs greater than or equal to 1000 is safe", system_prompt)
         self.assertIn("any PID below 1000", system_prompt)
+        self.assertIn("local Docker test database", system_prompt)
+        self.assertIn("production, remote, shared", system_prompt)
+        self.assertIn("~/.claude/jobs/*/tmp/*", system_prompt)
+        self.assertIn("exact matching job tmp directory", system_prompt)
+        self.assertIn("Broader access to ~/.claude is unsafe", system_prompt)
         self.assertIn("choose the persistent approval", system_prompt)
         self.assertIn("fall back to the one-time approval", system_prompt)
         self.assertIn("when neither approval is safe", system_prompt)

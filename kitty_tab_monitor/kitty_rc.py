@@ -126,7 +126,12 @@ class KittyRC:
     def get_text(self, window_id: int, extent: str = "screen") -> str:
         r = self._run(["get-text", "--match", f"id:{window_id}", "--extent", extent])
         if r.returncode != 0:
-            return ""
+            detail = r.stderr.decode(errors="replace").strip()
+            if not detail:
+                detail = f"exit status {r.returncode}"
+            raise RuntimeError(
+                f"kitty @ get-text failed for window {window_id}: {detail}"
+            )
         return r.stdout.decode(errors="replace")
 
     def send_text(self, window_id: int, text: str) -> bool:

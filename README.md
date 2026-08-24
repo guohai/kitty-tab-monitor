@@ -19,7 +19,8 @@ babysit them.
 
 1. **Poll** — every `poll_interval`s, read each window's screen via `kitty @ get-text`.
 2. **Pause detection** — hash the last `capture_lines`; if unchanged for `stable_polls`
-   passes, the tab is considered idle (output has stopped).
+   passes, the tab is considered idle (output has stopped). A changing tmux status clock is
+   excluded from this hash.
 3. **Heuristic pre-filter** — only idle screens that *look* like a prompt reach the LLM
    (keeps token spend down). Toggle with `require_heuristic`.
 4. **LLM decision** — the last lines, current directory, and workspace go to an
@@ -31,18 +32,23 @@ Window-specific log entries end with JSON containing the exact visible command/c
 the model's chosen action and short rationale, for example
 `{"context":"kill 3083188 3083199","action":"1 + Enter","reason":"safe high-PID cleanup"}`.
 Context is extracted locally from the screen rather than echoed by the model, saving output
-tokens and preserving the original command.
+tokens and preserving the original command. Each process startup also logs the package
+`version` and `build_date` so the running code can be identified from the log.
 
 For safe prompts the model picks the choice that keeps the task moving. File changes and
-removals inside the tab's workspace and numeric-PID process cleanup are allowed. A `kill`
-whose targets are all PID 1000 or above is safe; small-PID and name-based kills require
-review. For safe commands, the model prefers a safely scoped "always allow" or "don't ask
-again" choice so subsequent work continues without the same prompt. It falls back to
-one-time approval when persistent permission is unavailable, broad, or ambiguous. Choices
-that would change or remove files outside the workspace, reboot/shutdown the host, or
-perform system-wide destructive operations are left untouched for human review. The
-workspace is the nearest Git root above the tab's current directory, or the current
-directory when it is not in a repo.
+removals inside the tab's workspace and numeric-PID process cleanup are allowed. Clearly
+local Docker test-database resets are also allowed when they are part of a local test/gate
+workflow; production, remote, shared, or ambiguous database deletion still requires review.
+Writes under `~/.claude/jobs/*/tmp/*` count as safe test/job artifacts, and an "always allow"
+choice scoped to the exact job `tmp` directory is preferred. Broader `~/.claude` access is
+not allowed persistently. A `kill` whose targets are all PID 1000 or above is safe;
+small-PID and name-based kills require review. For safe commands, the model prefers a safely
+scoped "always allow" or "don't ask again" choice so subsequent work continues without the
+same prompt. It falls back to one-time approval when persistent permission is unavailable,
+broad, or ambiguous. Other choices that would change or remove files outside the workspace,
+reboot/shutdown the host, or perform system-wide destructive operations are left untouched
+for human review. The workspace is the nearest Git root above the tab's current directory,
+or the current directory when it is not in a repo.
 
 ## Requirements
 
@@ -118,10 +124,13 @@ This types into live shells **without confirmation** and will auto-answer prompt
 **including safety prompts meant for a human** (like Claude Code's own approval gates).
 That is powerful and risky. Mitigations built in, all configurable:
 
-- The LLM is instructed to proceed with safe and workspace-local actions, but to hold for
-  human review before out-of-workspace file changes/removals or a system reboot/shutdown.
+- The LLM is instructed to proceed with safe and workspace-local actions. Narrow exceptions
+  cover local Docker test cleanup and exact Claude job `tmp` artifacts; other out-of-workspace
+  file changes/removals and system reboot/shutdown actions require human review.
 - `send_denylist` blocks typing dangerous strings regardless of the LLM.
 - Control characters and embedded newlines are rejected before text reaches kitty.
+- Failed or empty kitty screen reads are logged and retried without discarding the last valid
+  stability state.
 - `skip_password_prompts` avoids secret prompts.
 - `window_title_include` lets you **scope it to specific tabs** (strongly recommended —
   e.g. only tabs titled `agent`).
