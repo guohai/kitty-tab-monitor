@@ -59,7 +59,7 @@ def signature(text: str, n: int) -> str:
 
 
 def looks_like_decision(text: str, n: int = 15):
-    tail = _tail(text, n)
+    tail = _stable_tail(text, n)
     if not tail.strip():
         return False, None
     for pat in _DECISION_PATTERNS:
@@ -69,7 +69,7 @@ def looks_like_decision(text: str, n: int = 15):
 
 
 def looks_like_password(text: str, n: int = 6) -> bool:
-    tail = _tail(text, n)
+    tail = _stable_tail(text, n)
     return any(p.search(tail) for p in _PASSWORD_PATTERNS)
 
 

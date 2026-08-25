@@ -19,8 +19,8 @@ babysit them.
 
 1. **Poll** — every `poll_interval`s, read each window's screen via `kitty @ get-text`.
 2. **Pause detection** — hash the last `capture_lines`; if unchanged for `stable_polls`
-   passes, the tab is considered idle (output has stopped). A changing tmux status clock is
-   excluded from this hash.
+   passes, the tab is considered idle (output has stopped). The tmux status line and the
+   blank padding above it are excluded from stability and prompt detection.
 3. **Heuristic pre-filter** — only idle screens that *look* like a prompt reach the LLM
    (keeps token spend down). Toggle with `require_heuristic`.
 4. **LLM decision** — the last lines, current directory, and workspace go to an
