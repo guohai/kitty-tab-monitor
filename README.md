@@ -45,10 +45,12 @@ not allowed persistently. A `kill` whose targets are all PID 1000 or above is sa
 small-PID and name-based kills require review. For safe commands, the model prefers a safely
 scoped "always allow" or "don't ask again" choice so subsequent work continues without the
 same prompt. It falls back to one-time approval when persistent permission is unavailable,
-broad, or ambiguous. Other choices that would change or remove files outside the workspace,
-reboot/shutdown the host, or perform system-wide destructive operations are left untouched
-for human review. The workspace is the nearest Git root above the tab's current directory,
-or the current directory when it is not in a repo.
+broad, or ambiguous. Approval labels such as `Parse error`, `Contains simple_expansion`, and
+`cannot be statically analyzed` are not command failures; the model evaluates the underlying
+command and approves it when safe. Other choices that would change or remove files outside
+the workspace, reboot/shutdown the host, or perform system-wide destructive operations are
+left untouched for human review. The workspace is the nearest Git root above the tab's
+current directory, or the current directory when it is not in a repo.
 
 ## Requirements
 

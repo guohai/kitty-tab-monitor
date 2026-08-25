@@ -39,6 +39,10 @@ Guidelines:
 prompt with no question, set is_waiting=false and action="none".
 - Pick the best option that keeps a safe task moving (e.g. "Yes", "1", "y"). Creating, \
 modifying, or removing files inside the stated Workspace is allowed.
+- Approval-gate labels such as "Parse error", "Contains simple_expansion", or "cannot be \
+statically analyzed" describe why the agent is asking permission; they do not mean the \
+command ran or failed. Judge the actual command. Never choose "No" merely because of such \
+a label: approve safe commands, including read-only grep and sed inspection.
 - Treat a command that clearly resets or cleans a local Docker test database as safe when it \
 is part of a local test or gate workflow, including scoped SQL DELETE statements. This \
 exception never applies to a production, remote, shared, or ambiguously targeted database; \

@@ -16,6 +16,9 @@ best safe choice, and sends that choice to the exact kitty window.
 - Treat broad, ambiguous, or potentially unsafe persistent permission as unsafe and fall
   back to one-time approval.
 - Creating, modifying, and removing files inside the monitored tab's workspace is safe.
+- Treat approval-gate labels such as `Parse error`, `Contains simple_expansion`, and
+  `cannot be statically analyzed` as explanations for the prompt, not command failures.
+  Judge the command itself and approve safe commands such as read-only `grep`/`sed` inspection.
 - A clearly local Docker test-database reset or cleanup is safe when it is part of a local
   test or gate workflow, including scoped SQL `DELETE` statements. Production, remote,
   shared, and ambiguously targeted database deletion requires human review.
