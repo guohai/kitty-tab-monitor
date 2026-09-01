@@ -42,6 +42,11 @@ class Config:
     poll_interval: float = 1.0                  # seconds between passes
     stable_polls: int = 2                       # identical screens in a row => "paused"
     capture_lines: int = 40                     # last N lines sent to the LLM
+    auto_mode_fallback_seconds: float = 120.0    # switch to manual after classifier outage
+
+    # --- system sleep lease ---
+    keep_awake: bool = False                    # opt in to preventing idle system sleep
+    keep_awake_lease_seconds: float = 600.0     # release after this much inactivity
 
     # --- acting ---
     action_cooldown: float = 8.0                # min seconds between actions on one tab
@@ -95,6 +100,24 @@ class Config:
         cfg.model = env.get("KTM_MODEL", cfg.model)
         cfg.kitty_socket = env.get("KTM_SOCKET", env.get("KITTY_LISTEN_ON", cfg.kitty_socket))
         cfg.kitty_rc_password = env.get("KITTY_RC_PASSWORD", cfg.kitty_rc_password)
+        if "KTM_KEEP_AWAKE" in env:
+            cfg.keep_awake = str(env["KTM_KEEP_AWAKE"]).strip().lower() in (
+                "1", "true", "yes", "on"
+            )
+        if "KTM_KEEP_AWAKE_LEASE_SECONDS" in env:
+            try:
+                cfg.keep_awake_lease_seconds = float(
+                    env["KTM_KEEP_AWAKE_LEASE_SECONDS"]
+                )
+            except ValueError:
+                pass
+        if "KTM_AUTO_MODE_FALLBACK_SECONDS" in env:
+            try:
+                cfg.auto_mode_fallback_seconds = float(
+                    env["KTM_AUTO_MODE_FALLBACK_SECONDS"]
+                )
+            except ValueError:
+                pass
         if "KTM_DRY_RUN" in env:
             cfg.dry_run = str(env["KTM_DRY_RUN"]).strip().lower() in ("1", "true", "yes", "on")
         return cfg

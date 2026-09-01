@@ -50,14 +50,64 @@ class PromptTests(unittest.TestCase):
         self.assertIn('Approval-gate labels such as "Parse error"', system_prompt)
         self.assertIn('Never choose "No" merely because', system_prompt)
         self.assertIn("read-only grep and sed inspection", system_prompt)
+        self.assertIn("workspace-local development environment files", system_prompt)
+        self.assertIn("same terminal", system_prompt)
+        self.assertIn("external path is not unsafe by itself", system_prompt)
+        self.assertIn("do not hold solely because", system_prompt)
+        self.assertIn("remote SSH/mosh session", system_prompt)
+        self.assertIn('"Yes, and switch to auto mode"', system_prompt)
+        self.assertIn("Auto mode is preferred for safe commands", system_prompt)
+        self.assertIn("does not make an unsafe current command safe", system_prompt)
         self.assertIn("choose the persistent approval", system_prompt)
         self.assertIn("fall back to the one-time approval", system_prompt)
-        self.assertIn("when neither approval is safe", system_prompt)
+        self.assertIn("when none of those choices is safe", system_prompt)
+        self.assertLess(
+            system_prompt.index("switch to auto mode"),
+            system_prompt.index('"always allow"/"don\'t ask again"'),
+        )
+        self.assertLess(
+            system_prompt.index('"always allow"/"don\'t ask again"'),
+            system_prompt.index("one-time choice safely performs"),
+        )
         self.assertIn("concise 2-8 word rationale", system_prompt)
         self.assertNotIn('"context"', system_prompt)
         self.assertIn("Workspace: /repo", user_prompt)
         self.assertIn("Current directory: /repo/src", user_prompt)
+        self.assertIn("Session: local", user_prompt)
         self.assertIn("literal {workspace}", user_prompt)
+
+    @patch("kitty_tab_monitor.llm._post_stream")
+    def test_marks_remote_session_without_trusting_local_workspace(self, post_stream):
+        response = {
+            "is_waiting": False,
+            "action": "none",
+            "text_to_send": "",
+            "press_enter": False,
+            "confidence": 0.9,
+            "reason": "No prompt",
+        }
+        post_stream.return_value = (json.dumps(response), None)
+        config = SimpleNamespace(
+            openai_api_key="test-key",
+            openai_base_url="https://example.test/v1",
+            model="test-model",
+            system_prompt="",
+            user_prompt_template="",
+        )
+
+        decide(
+            config,
+            "remote agent",
+            "cd /home/user/Dev/project; npm test",
+            "/Users/local/launcher",
+            "/Users/local/launcher",
+            "remote",
+        )
+
+        request = post_stream.call_args.args[1]
+        user_prompt = request["messages"][1]["content"]
+        self.assertIn("Session: remote", user_prompt)
+        self.assertIn("Workspace: /Users/local/launcher", user_prompt)
 
 
 class NormalizeDecisionTests(unittest.TestCase):

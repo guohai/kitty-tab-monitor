@@ -29,6 +29,11 @@ _PASSWORD_PATTERNS = [
     re.compile(r"(?i)\benter\b.*\b(password|passphrase|pin)\b"),
 ]
 
+_AUTO_MODE_RATE_LIMIT = re.compile(
+    r"(?is)temporarily unavailable\s*\(rate-limited\).*"
+    r"auto mode cannot determine the safety"
+)
+
 _TMUX_STATUS_LINE = re.compile(
     r"^\[[^\]\r\n]+\]\d+:\S.*\b\d{1,2}:\d{2}"
     r"(?:\s+\d{1,2}-[A-Za-z]{3}-\d{2,4})?\s*$"
@@ -71,6 +76,10 @@ def looks_like_decision(text: str, n: int = 15):
 def looks_like_password(text: str, n: int = 6) -> bool:
     tail = _stable_tail(text, n)
     return any(p.search(tail) for p in _PASSWORD_PATTERNS)
+
+
+def looks_like_auto_mode_rate_limit(text: str, n: int = 20) -> bool:
+    return bool(_AUTO_MODE_RATE_LIMIT.search(_stable_tail(text, n)))
 
 
 @dataclass

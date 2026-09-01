@@ -43,6 +43,18 @@ modifying, or removing files inside the stated Workspace is allowed.
 statically analyzed" describe why the agent is asking permission; they do not mean the \
 command ran or failed. Judge the actual command. Never choose "No" merely because of such \
 a label: approve safe commands, including read-only grep and sed inspection.
+- Loading workspace-local development environment files with source or . is safe when the \
+command stays local. Printing a requested environment value to the same terminal is also \
+safe when it is not transmitted elsewhere; this is not a secret-entry prompt.
+- An absolute or external path is not unsafe by itself. Approve harmless operations regardless \
+of path, including cd, listing or reading files, loading development environment files, setting \
+shell variables, and running tests or builds. Judge actual effects; do not hold solely because \
+a path is outside Workspace.
+- For a remote SSH/mosh session, Workspace and Current directory describe the local launcher, \
+not the remote filesystem. Infer the remote workspace from a visible cd command. A cd into \
+a user-owned development path such as /home/USER/Dev/PROJECT, followed by local environment \
+loading, a localhost database export, and test execution is safe. Do not hold solely because \
+the absolute remote path differs from the local launcher workspace.
 - Treat a command that clearly resets or cleans a local Docker test database as safe when it \
 is part of a local test or gate workflow, including scoped SQL DELETE statements. This \
 exception never applies to a production, remote, shared, or ambiguously targeted database; \
@@ -57,10 +69,15 @@ purpose is not shown. A kill targeting PID 1, any PID below 1000, process names,
 processes requires human review. Freeing a development port and restarting an application \
 process are also safe.
 - Apply this decision priority in order:
-  1. If the command/action is safe and an "always allow"/"don't ask again" choice is scoped \
+  1. If the command/action is safe and a choice says "Yes, and switch to auto mode" or \
+     otherwise offers auto mode, choose that auto-mode option instead of ordinary Yes. \
+     Auto mode is preferred for safe commands and needs no human review.
+  2. Otherwise, if the command/action is safe and an "always allow"/"don't ask again" choice is scoped \
      to that safe command or action, choose the persistent approval to prevent repeat prompts.
-  2. Otherwise, if a one-time choice safely performs the action, choose the one-time approval.
-  3. Only when neither approval is safe, set action="none" and is_waiting=true for human review.
+  3. Otherwise, if a one-time choice safely performs the action, choose the one-time approval.
+  4. Only when none of those choices is safe, set action="none" and is_waiting=true for human review.
+- An auto-mode choice does not make an unsafe current command safe. Apply the command safety \
+rules first, then prefer auto mode when the current command is safe.
 - A persistent permission with broad, ambiguous, or potentially unsafe scope is not safe; \
 fall back to the one-time approval instead.
 - Apart from the exact Claude job tmp artifact exception above, do not act when a choice \
@@ -75,13 +92,14 @@ be outside the Workspace, hold for human review.
 
 DEFAULT_USER_TEMPLATE = (
     "Tab title: {tab_title}\n\n"
+    "Session: {session_type}\n\n"
     "Workspace: {workspace}\n\n"
     "Current directory: {cwd}\n\n"
     "Last visible lines of this paused tab:\n---\n{screen_text}\n---\n"
     "Return the JSON decision."
 )
 
-_TEMPLATE_TOKEN = re.compile(r"\{(tab_title|workspace|cwd|screen_text)\}")
+_TEMPLATE_TOKEN = re.compile(r"\{(tab_title|session_type|workspace|cwd|screen_text)\}")
 
 
 def _headers(cfg) -> dict:
@@ -203,7 +221,14 @@ def _normalize_decision(value):
     }, None
 
 
-def decide(cfg, tab_title: str, screen_text: str, workspace: str = "", cwd: str = ""):
+def decide(
+    cfg,
+    tab_title: str,
+    screen_text: str,
+    workspace: str = "",
+    cwd: str = "",
+    session_type: str = "local",
+):
     if not cfg.openai_api_key:
         return None, "no OPENAI_API_KEY set"
 
@@ -211,6 +236,7 @@ def decide(cfg, tab_title: str, screen_text: str, workspace: str = "", cwd: str 
     template = (cfg.user_prompt_template or "").strip() or DEFAULT_USER_TEMPLATE
     values = {
         "tab_title": tab_title,
+        "session_type": session_type,
         "workspace": workspace or "unknown",
         "cwd": cwd or "unknown",
         "screen_text": screen_text,

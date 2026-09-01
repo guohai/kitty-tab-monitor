@@ -15,6 +15,9 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 
+_REMOTE_PROGRAMS = {"autossh", "mosh", "mosh-client", "ssh"}
+
+
 def _cwd_path(value) -> str:
     """Convert kitty's cwd value (usually a file URL) into a local path."""
     if not isinstance(value, str) or not value:
@@ -52,6 +55,18 @@ def _window_cwd(window: dict) -> str:
         if cwd:
             return cwd
     return ""
+
+
+def is_remote_session(window: dict) -> bool:
+    if window.get("session_type") == "remote":
+        return True
+    for process in window.get("foreground_processes") or []:
+        cmdline = process.get("cmdline") or []
+        if isinstance(cmdline, str):
+            cmdline = [cmdline]
+        if cmdline and Path(str(cmdline[0])).name.lower().lstrip("-") in _REMOTE_PROGRAMS:
+            return True
+    return False
 
 
 class KittyRC:
@@ -140,6 +155,10 @@ class KittyRC:
                       input_bytes=text.encode())
         return r.returncode == 0
 
+    def send_key(self, window_id: int, key: str) -> bool:
+        r = self._run(["send-key", "--match", f"id:{window_id}", key])
+        return r.returncode == 0
+
     def focus_tab(self, tab_id: int) -> bool:
         return self._run(["focus-tab", "--match", f"id:{tab_id}"]).returncode == 0
 
@@ -159,6 +178,8 @@ def iter_windows(ls_data: list):
                     "tab_title": tab.get("title", "") or "",
                     "window_id": w.get("id"),
                     "window_title": w.get("title", "") or "",
+                    "foreground_processes": w.get("foreground_processes") or [],
+                    "session_type": "remote" if is_remote_session(w) else "local",
                     "cwd": cwd,
                     "workspace": _workspace_for_cwd(cwd),
                     "is_focused": bool(w.get("is_focused") or w.get("is_active")),

@@ -31,6 +31,9 @@ def make_config(**overrides):
         "kitty_rc_password": "",
         "stable_polls": 2,
         "capture_lines": 40,
+        "auto_mode_fallback_seconds": 120.0,
+        "keep_awake": False,
+        "keep_awake_lease_seconds": 600.0,
         "send_denylist": [],
         "window_title_include": [],
         "window_title_exclude": [],
@@ -88,9 +91,104 @@ class MonitorActionTests(unittest.TestCase):
 
         self.assertEqual(
             messages[0],
-            "starting: version=0.1.3 build_date=2026-08-24 model=test-model "
-            "dry_run=False poll=1.0s socket=(auto-discover)",
+            "starting: version=0.2.0 build_date=2026-09-01 model=test-model "
+            "dry_run=False poll=1.0s socket=(auto-discover) "
+            "auto_fallback=120s "
+            "keep_awake=disabled lease=600s",
         )
+
+    @patch("kitty_tab_monitor.monitor.time.monotonic")
+    def test_rate_limited_auto_mode_switches_to_manual_once_after_two_minutes(
+        self, monotonic
+    ):
+        monotonic.side_effect = [100.0, 219.9, 220.0, 300.0, 400.0]
+        messages = []
+        monitor = self.make_monitor(logger=messages.append)
+        monitor.rc = Mock()
+        monitor.rc.focus_tab.return_value = True
+        monitor.rc.send_key.return_value = True
+        monitor.awake = Mock()
+        window = {"window_id": 11, "tab_id": 4}
+        screen = (
+            "Initializing\u2026\n"
+            "Error: claude-opus-5 is temporarily unavailable (rate-limited), so "
+            "auto mode cannot determine the safety of Agent right now."
+        )
+
+        self.assertTrue(monitor._recover_from_auto_mode_rate_limit(window, screen))
+        self.assertTrue(monitor._recover_from_auto_mode_rate_limit(window, screen))
+        monitor.rc.send_key.assert_not_called()
+
+        self.assertTrue(monitor._recover_from_auto_mode_rate_limit(window, screen))
+        self.assertTrue(monitor._recover_from_auto_mode_rate_limit(window, screen))
+
+        monitor.rc.focus_tab.assert_called_once_with(4)
+        monitor.rc.send_key.assert_called_once_with(11, "shift+tab")
+        monitor.awake.renew.assert_called_once_with()
+        details = json.loads(messages[-1].split(" :: ", 1)[1])
+        self.assertEqual(details["action"], "Shift+Tab")
+
+        self.assertFalse(
+            monitor._recover_from_auto_mode_rate_limit(window, "manual mode")
+        )
+        self.assertTrue(monitor._recover_from_auto_mode_rate_limit(window, screen))
+        self.assertFalse(monitor.auto_mode_failures[11]["handled"])
+        monitor.rc.send_key.assert_called_once()
+
+    @patch.object(Monitor, "_handle")
+    def test_screen_changes_renew_one_shared_lease(self, _handle):
+        monitor = self.make_monitor()
+        monitor.awake = Mock()
+        monitor.rc = Mock()
+        monitor.rc.ls.return_value = self.window_listing()
+        monitor.rc.get_text.side_effect = ["ready", "ready", "new output"]
+
+        monitor.tick()
+        monitor.tick()
+        monitor.tick()
+
+        self.assertEqual(monitor.awake.tick.call_count, 3)
+        self.assertEqual(monitor.awake.renew.call_count, 2)
+
+    @patch.object(Monitor, "_handle")
+    def test_unchanged_known_running_task_renews_lease(self, _handle):
+        monitor = self.make_monitor()
+        monitor.awake = Mock()
+        monitor.rc = Mock()
+        listing = self.window_listing()
+        listing[0]["tabs"][0]["windows"][0]["foreground_processes"] = [
+            {"cmdline": ["/usr/bin/python3", "quiet-job.py"]}
+        ]
+        monitor.rc.ls.return_value = listing
+        monitor.rc.get_text.return_value = "quiet task"
+
+        monitor.tick()
+        monitor.tick()
+
+        self.assertEqual(monitor.awake.renew.call_count, 2)
+
+    @patch.object(Monitor, "_handle")
+    def test_disconnected_mosh_status_does_not_renew_lease(self, _handle):
+        monitor = self.make_monitor()
+        monitor.awake = Mock()
+        monitor.rc = Mock()
+        listing = self.window_listing()
+        listing[0]["tabs"][0]["windows"][0]["foreground_processes"] = [
+            {"cmdline": ["mosh-client", "10.0.0.1", "60001"]}
+        ]
+        monitor.rc.ls.return_value = listing
+        monitor.rc.get_text.side_effect = [
+            "remote task output",
+            "mosh: Last contact 1 second ago. [To quit: Ctrl-^ .]",
+            "mosh: Last contact 2 seconds ago. [To quit: Ctrl-^ .]",
+        ]
+
+        monitor.tick()
+        monitor.tick()
+        monitor.tick()
+
+        self.assertEqual(monitor.awake.tick.call_count, 3)
+        self.assertEqual(monitor.awake.renew.call_count, 1)
 
     def test_extracts_command_without_approval_menu(self):
         screen = """Bash command · from the general-purpose agent
@@ -159,6 +257,7 @@ class MonitorActionTests(unittest.TestCase):
     def test_sends_choice_and_enter(self, decide_mock):
         messages = []
         monitor = self.make_monitor(logger=messages.append)
+        monitor.awake = Mock()
         state = WindowState()
 
         window = {
@@ -170,12 +269,13 @@ class MonitorActionTests(unittest.TestCase):
         monitor._handle(window, state, "screen-a", "prompt", "agent")
 
         decide_mock.assert_called_once_with(
-            monitor.cfg, "agent", "prompt", "/repo", "/repo/src"
+            monitor.cfg, "agent", "prompt", "/repo", "/repo/src", "local"
         )
         self.assertEqual(monitor.rc.focused_tabs, [4])
         self.assertEqual(monitor.rc.sent, [(11, "1\r")])
         self.assertEqual(state.last_handled_sig, "screen-a")
         self.assertGreater(state.last_action_ts, 0)
+        monitor.awake.renew.assert_called_once_with()
         details = json.loads(messages[-1].split(" :: ", 1)[1])
         self.assertEqual(details["context"], "prompt")
         self.assertEqual(details["action"], "1 + Enter")

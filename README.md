@@ -27,6 +27,28 @@ babysit them.
    OpenAI-compatible endpoint, which returns JSON:
    `{is_waiting, action, text_to_send, press_enter, confidence, reason}`.
 5. **Act** — `kitty @ focus-tab` then `kitty @ send-text` types the answer (+ Enter).
+6. **Keep awake** — activity in any monitored tab renews one shared 10-minute system-sleep
+   lease. Stable screens that show a known running task also renew it, even without output.
+
+If auto mode reports that its safety classifier is temporarily rate-limited for two
+continuous minutes, the monitor sends `Shift+Tab` once to switch that tab back to manual
+mode. It will not send the key again unless the error disappears and later returns.
+
+Keep-awake is disabled by default and can be enabled with `--keep-awake` or in
+`config.json`. The lease owns at most one inhibitor process, even if the screen changes
+every poll or two monitor instances are started. After all monitored tabs remain inactive
+for `keep_awake_lease_seconds`, the inhibitor exits and normal system sleep resumes.
+Stopping the monitor releases it immediately.
+
+Silent SSH sessions do not count as running tasks. Changing mosh disconnect indicators,
+such as `Last contact ... ago`, and SSH/mosh network-error status also do not renew the
+lease. With no activity in another monitored tab, normal sleep is allowed after the lease
+expires following the last genuine remote output.
+
+- macOS uses `caffeinate -i`; it prevents idle system sleep but still allows display sleep.
+- Linux uses `systemd-inhibit`, falling back to `gnome-session-inhibit`.
+- Windows uses the native `SetThreadExecutionState` system-sleep assertion.
+- Unsupported systems keep monitoring normally and log that no inhibitor is available.
 
 Window-specific log entries end with JSON containing the exact visible command/context and
 the model's chosen action and short rationale, for example
@@ -34,11 +56,22 @@ the model's chosen action and short rationale, for example
 Context is extracted locally from the screen rather than echoed by the model, saving output
 tokens and preserving the original command. Each process startup also logs the package
 `version` and `build_date` so the running code can be identified from the log.
+Console entries have a blank line between them for easier review; the file remains compact
+with exactly one newline per entry.
 
 For safe prompts the model picks the choice that keeps the task moving. File changes and
 removals inside the tab's workspace and numeric-PID process cleanup are allowed. Clearly
 local Docker test-database resets are also allowed when they are part of a local test/gate
 workflow; production, remote, shared, or ambiguous database deletion still requires review.
+Workspace-local development environment loading and local environment-value inspection are
+also allowed when nothing is transmitted elsewhere. When a safe prompt offers `Yes, and
+switch to auto mode`, that choice is preferred over ordinary `Yes`; auto mode never makes
+an unsafe current command safe.
+Absolute and external paths are not rejected merely for being outside the reported workspace.
+Harmless operations such as changing directory, inspecting files, loading development
+environment files, setting shell variables, and running tests/builds are approved based on
+their effects. For SSH/mosh tabs, the remote workspace is inferred from visible commands
+rather than compared with kitty's local launcher directory.
 Writes under `~/.claude/jobs/*/tmp/*` count as safe test/job artifacts, and an "always allow"
 choice scoped to the exact job `tmp` directory is preferred. Broader `~/.claude` access is
 not allowed persistently. A `kill` whose targets are all PID 1000 or above is safe;
@@ -68,6 +101,15 @@ kitty @ set-tab-title tab-monitor   # in the tab you'll run the monitor from
 ./run.sh --dry-run           # observe decisions without typing anything
 ./run.sh                      # go live
 ```
+
+Keep-awake behavior can also be overridden for one run:
+
+```bash
+./run.sh --keep-awake --keep-awake-lease-seconds 600  # enable for 10 minutes
+./run.sh --no-keep-awake  # override an enabled environment or custom config
+```
+
+Run `./run.sh --help` for all command-line options.
 
 ### Credentials via `.env`
 
@@ -106,6 +148,9 @@ custom socket path or when more than one kitty instance is running.
 | `poll_interval` | seconds between passes |
 | `stable_polls` | identical screens in a row before a tab counts as "paused" |
 | `capture_lines` | how many trailing lines are sent to the LLM |
+| `auto_mode_fallback_seconds` | delay before one-time `Shift+Tab` recovery (default: 120) |
+| `keep_awake` | renew a system-sleep inhibitor while tabs are active (default: false) |
+| `keep_awake_lease_seconds` | inactivity timeout before releasing it (default: 600) |
 | `action_cooldown` | min seconds between actions on the same tab |
 | `max_actions_per_min` | global rate limit |
 | `min_confidence` | ignore LLM decisions below this |
@@ -118,7 +163,8 @@ custom socket path or when more than one kitty instance is running.
 | `kitty_socket` | kitty control socket; normally inherited from `KITTY_LISTEN_ON` |
 
 Env overrides: `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `KITTY_RC_PASSWORD`, `KTM_MODEL`,
-`KTM_SOCKET`, `KTM_DRY_RUN`.
+`KTM_SOCKET`, `KTM_AUTO_MODE_FALLBACK_SECONDS`, `KTM_KEEP_AWAKE`,
+`KTM_KEEP_AWAKE_LEASE_SECONDS`, `KTM_DRY_RUN`.
 
 ## ⚠️ Safety
 

@@ -9,6 +9,9 @@ best safe choice, and sends that choice to the exact kitty window.
 ## Decision Policy
 
 - Keep safe tasks moving automatically.
+- When a safe command offers `Yes, and switch to auto mode` or an equivalent auto-mode
+  choice, select it instead of ordinary `Yes`. Evaluate command safety first; auto mode
+  does not make an unsafe current command safe.
 - For a safe command/action, prefer "always allow" or "don't ask again" when that persistent
   permission is itself narrowly and safely scoped. This avoids repeated prompts.
 - Otherwise choose a safe one-time approval. Hold for human review only when neither the
@@ -16,9 +19,18 @@ best safe choice, and sends that choice to the exact kitty window.
 - Treat broad, ambiguous, or potentially unsafe persistent permission as unsafe and fall
   back to one-time approval.
 - Creating, modifying, and removing files inside the monitored tab's workspace is safe.
+- An absolute or external path is not unsafe by itself. Approve harmless operations at any
+  path, including `cd`, file inspection, development environment loading, shell-variable
+  setup, and test/build execution. Judge actual effects and never hold solely because a path
+  differs from the reported workspace.
+- For SSH/mosh tabs, kitty's workspace and cwd describe the local launcher. Infer the remote
+  workspace from visible commands; do not compare remote paths against the local filesystem.
 - Treat approval-gate labels such as `Parse error`, `Contains simple_expansion`, and
   `cannot be statically analyzed` as explanations for the prompt, not command failures.
   Judge the command itself and approve safe commands such as read-only `grep`/`sed` inspection.
+- Loading workspace-local development environment files with `source` or `.` is safe when
+  the command remains local. Printing a requested environment value to the same terminal
+  is safe when it is not transmitted elsewhere and is not a secret-entry prompt.
 - A clearly local Docker test-database reset or cleanup is safe when it is part of a local
   test or gate workflow, including scoped SQL `DELETE` statements. Production, remote,
   shared, and ambiguously targeted database deletion requires human review.
@@ -54,6 +66,8 @@ best safe choice, and sends that choice to the exact kitty window.
   shorten it or include the surrounding approval question and menu.
 - The JSON `action` records the model's effective input, such as `1 + Enter`; `reason` is
   the model's concise rationale for choosing or withholding the action.
+- Print one blank line after each console log entry for human scanning. Persist only one
+  newline per entry in the log file to avoid wasting storage.
 
 ## Kitty Integration
 
@@ -62,6 +76,25 @@ best safe choice, and sends that choice to the exact kitty window.
   sockets owned by the current user, and require `KTM_SOCKET` when discovery is ambiguous.
 - Exclude the monitor's own kitty window and honor configured title include/exclude rules.
 - Target terminal windows by kitty window ID even when their tabs are not visible.
+- If the auto-mode safety classifier remains visibly rate-limited for 120 seconds, focus
+  that tab and send `Shift+Tab` once to return it to manual mode. Do not repeat for the
+  same visible occurrence; reset only after the error disappears.
+
+## Keep Awake
+
+- Treat output changes in any monitored tab as activity and renew one shared 10-minute
+  system-sleep lease. A recognized foreground task or running-task screen marker also
+  counts as activity when no new output appears.
+- Own at most one inhibitor process per user across monitor instances. Renew the lease
+  deadline without restarting an already-running inhibitor.
+- On macOS use `caffeinate -i` without `-d`, so display sleep remains enabled. On Linux
+  prefer `systemd-inhibit` with `gnome-session-inhibit` as fallback. On Windows use
+  `SetThreadExecutionState` with system-required, not display-required.
+- Release the inhibitor after the configured inactivity timeout and on normal shutdown.
+  Platform helpers must also exit when the monitor process dies.
+- Do not treat a silent SSH/mosh process as activity. Suppress lease renewal for changing
+  mosh disconnect counters and SSH/mosh network-error status; connected remote output still
+  counts as activity, and other active monitored tabs still renew the shared lease.
 
 ## Verification
 

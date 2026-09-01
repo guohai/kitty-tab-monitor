@@ -8,8 +8,19 @@ import re
 import time
 
 from . import __build_date__, __version__
-from .detector import StabilityTracker, _tail, looks_like_decision, looks_like_password
+from .detector import (
+    StabilityTracker,
+    _tail,
+    looks_like_auto_mode_rate_limit,
+    looks_like_decision,
+    looks_like_password,
+)
 from .kitty_rc import KittyRC, iter_windows
+from .keep_awake import (
+    KeepAwakeLease,
+    has_running_task,
+    remote_connection_unresponsive,
+)
 from .llm import decide
 from .safety import Guard
 
@@ -30,6 +41,12 @@ class Monitor:
         self.guard = Guard(cfg)
         self.include = [re.compile(p, re.I) for p in cfg.window_title_include]
         self.exclude = [re.compile(p, re.I) for p in cfg.window_title_exclude]
+        self.awake = KeepAwakeLease(
+            cfg.keep_awake,
+            cfg.keep_awake_lease_seconds,
+            logger,
+        )
+        self.auto_mode_failures = {}
         # If launched inside kitty, never act on our own window.
         self.self_window_id = _env_int("KITTY_WINDOW_ID")
 
@@ -97,15 +114,22 @@ class Monitor:
         self.log(f"starting: version={__version__} build_date={__build_date__} "
                  f"model={self.cfg.model} dry_run={self.cfg.dry_run} "
                  f"poll={self.cfg.poll_interval}s "
-                 f"socket={self.cfg.kitty_socket or '(auto-discover)'}")
-        while True:
-            try:
-                self.tick()
-            except Exception as e:  # noqa: BLE001 - keep the loop alive
-                self.log(f"tick error: {e}")
-            time.sleep(self.cfg.poll_interval)
+                 f"socket={self.cfg.kitty_socket or '(auto-discover)'} "
+                 f"auto_fallback={self.cfg.auto_mode_fallback_seconds:g}s "
+                 f"keep_awake={self.awake.backend_name} "
+                 f"lease={self.cfg.keep_awake_lease_seconds:g}s")
+        try:
+            while True:
+                try:
+                    self.tick()
+                except Exception as e:  # noqa: BLE001 - keep the loop alive
+                    self.log(f"tick error: {e}")
+                time.sleep(self.cfg.poll_interval)
+        finally:
+            self.awake.close()
 
     def tick(self) -> None:
+        self.awake.tick()
         for w in iter_windows(self.rc.ls()):
             wid = w["window_id"]
             if wid is None or wid == self.self_window_id:
@@ -123,7 +147,17 @@ class Monitor:
                 self.log(f"[win {wid}] screen read returned empty -> retrying")
                 continue
 
+            previous = self.tracker.states.get(wid)
+            previous_sig = previous.last_sig if previous else ""
             st, sig = self.tracker.update(wid, text)
+            remote_down = remote_connection_unresponsive(w, text)
+            if not remote_down and (
+                not previous_sig or sig != previous_sig or has_running_task(w, text)
+            ):
+                self.awake.renew()
+
+            if self._recover_from_auto_mode_rate_limit(w, text):
+                continue
 
             if not self.tracker.is_paused(st):
                 continue
@@ -146,6 +180,46 @@ class Monitor:
 
             self._handle(w, st, sig, text, title)
 
+    def _recover_from_auto_mode_rate_limit(self, w, text: str) -> bool:
+        wid = w["window_id"]
+        if not looks_like_auto_mode_rate_limit(text):
+            self.auto_mode_failures.pop(wid, None)
+            return False
+
+        now = time.monotonic()
+        state = self.auto_mode_failures.setdefault(
+            wid, {"first_seen": now, "handled": False}
+        )
+        if state["handled"]:
+            return True
+        if now - state["first_seen"] < self.cfg.auto_mode_fallback_seconds:
+            return True
+
+        tab_id = w["tab_id"]
+        details = self._log_details(
+            _tail(text, 12),
+            "Shift+Tab",
+            "auto mode rate-limited for two minutes",
+        )
+        if self.cfg.dry_run:
+            state["handled"] = True
+            self.log(
+                f"[win {wid}] DRY-RUN: would select tab {tab_id} and send Shift+Tab "
+                f":: {details}"
+            )
+            return True
+
+        focused = self.rc.focus_tab(tab_id)
+        ok = self.rc.send_key(wid, "shift+tab")
+        if ok:
+            state["handled"] = True
+            self.awake.renew()
+        self.log(
+            f"[win {wid}] {'SENT' if ok else 'SEND FAILED'} Shift+Tab "
+            f"(focused={focused}) :: {details}"
+        )
+        return True
+
     # --- decision + action -------------------------------------------------
     def _handle(self, w, st, sig, text, title) -> None:
         wid, tab_id = w["window_id"], w["tab_id"]
@@ -158,7 +232,12 @@ class Monitor:
         tail = _tail(text, self.cfg.capture_lines)
 
         decision, err = decide(
-            self.cfg, title, tail, w.get("workspace", ""), w.get("cwd", "")
+            self.cfg,
+            title,
+            tail,
+            w.get("workspace", ""),
+            w.get("cwd", ""),
+            w.get("session_type", "local"),
         )
         if err:
             details = self._log_details(title, "error", err)
@@ -213,5 +292,6 @@ class Monitor:
             st.last_handled_sig = sig
             self.guard.record_action()
             st.last_action_ts = time.monotonic()
+            self.awake.renew()
         self.log(f"[win {wid}] {'SENT' if ok else 'SEND FAILED'} {payload!r} "
                  f"(conf={conf:.2f}, focused={focused}) :: {details}")

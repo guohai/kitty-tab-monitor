@@ -42,6 +42,26 @@ class WorkspaceTests(unittest.TestCase):
 
         self.assertEqual(window["cwd"], "/tmp/example")
         self.assertEqual(window["workspace"], "/tmp/example")
+        self.assertEqual(
+            window["foreground_processes"],
+            [{"cwd": "file:///tmp/example"}],
+        )
+        self.assertEqual(window["session_type"], "local")
+
+    def test_marks_ssh_and_mosh_windows_as_remote(self):
+        for executable in ("ssh", "mosh-client"):
+            data = [{
+                "tabs": [{
+                    "windows": [{
+                        "id": 3,
+                        "foreground_processes": [
+                            {"cmdline": [f"/usr/bin/{executable}", "host"]}
+                        ],
+                    }],
+                }],
+            }]
+
+            self.assertEqual(next(iter_windows(data))["session_type"], "remote")
 
 
 class KittyRCTests(unittest.TestCase):
@@ -107,6 +127,18 @@ class KittyRCTests(unittest.TestCase):
             RuntimeError, "window 17: Error: target window not found"
         ):
             KittyRC(socket="unix:/tmp/kitty-123").get_text(17)
+
+    @patch("kitty_tab_monitor.kitty_rc.subprocess.run")
+    def test_send_key_targets_exact_window(self, run):
+        run.return_value = SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+        sent = KittyRC(socket="unix:/tmp/kitty-123").send_key(17, "shift+tab")
+
+        self.assertTrue(sent)
+        self.assertEqual(
+            run.call_args.args[0][-4:],
+            ["send-key", "--match", "id:17", "shift+tab"],
+        )
 
 
 if __name__ == "__main__":

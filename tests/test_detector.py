@@ -2,6 +2,7 @@ import unittest
 
 from kitty_tab_monitor.detector import (
     StabilityTracker,
+    looks_like_auto_mode_rate_limit,
     looks_like_decision,
     looks_like_password,
     signature,
@@ -41,6 +42,16 @@ class StabilityTests(unittest.TestCase):
         )
 
         self.assertTrue(looks_like_password(screen))
+
+    def test_detects_auto_mode_classifier_rate_limit(self):
+        screen = (
+            "Initializing\u2026\n"
+            "Error: claude-opus-5 is temporarily unavailable (rate-limited), so "
+            "auto mode cannot determine the safety of Agent right now."
+        )
+
+        self.assertTrue(looks_like_auto_mode_rate_limit(screen))
+        self.assertFalse(looks_like_auto_mode_rate_limit("Initializing\u2026"))
 
 
 if __name__ == "__main__":
