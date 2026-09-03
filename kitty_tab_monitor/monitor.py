@@ -1,5 +1,4 @@
-"""Main loop: poll windows -> find paused+awaiting-decision ones -> ask LLM ->
-select the tab and type the answer."""
+"""Poll kitty windows and answer paused decision prompts in place."""
 from __future__ import annotations
 
 import json
@@ -14,6 +13,7 @@ from .detector import (
     looks_like_auto_mode_rate_limit,
     looks_like_decision,
     looks_like_password,
+    signature,
 )
 from .kitty_rc import KittyRC, iter_windows
 from .keep_awake import (
@@ -109,6 +109,26 @@ class Monitor:
             return f"{text} + Enter" if text else "Enter"
         return text or "none"
 
+    def _target_still_matches(self, wid: int, expected_sig: str) -> bool:
+        """Ensure an LLM response still applies to the exact target window."""
+        try:
+            current = self.rc.get_text(wid, extent="screen")
+        except Exception as e:  # noqa: BLE001 - a missing target must never receive input
+            self.log(f"[win {wid}] pre-send screen read error -> not sending: {e}")
+            return False
+        if not current.strip():
+            self.log(f"[win {wid}] pre-send screen read returned empty -> not sending")
+            return False
+        if signature(current, self.cfg.capture_lines) != expected_sig:
+            details = self._log_details(
+                _tail(current, 8),
+                "none",
+                "target screen changed before send",
+            )
+            self.log(f"[win {wid}] target changed -> not sending :: {details}")
+            return False
+        return True
+
     # --- lifecycle ---------------------------------------------------------
     def run(self) -> None:
         self.log(f"starting: version={__version__} build_date={__build_date__} "
@@ -195,7 +215,6 @@ class Monitor:
         if now - state["first_seen"] < self.cfg.auto_mode_fallback_seconds:
             return True
 
-        tab_id = w["tab_id"]
         details = self._log_details(
             _tail(text, 12),
             "Shift+Tab",
@@ -204,19 +223,21 @@ class Monitor:
         if self.cfg.dry_run:
             state["handled"] = True
             self.log(
-                f"[win {wid}] DRY-RUN: would select tab {tab_id} and send Shift+Tab "
+                f"[win {wid}] DRY-RUN: would send Shift+Tab without changing focus "
                 f":: {details}"
             )
             return True
 
-        focused = self.rc.focus_tab(tab_id)
+        expected_sig = signature(text, self.cfg.capture_lines)
+        if not self._target_still_matches(wid, expected_sig):
+            return True
         ok = self.rc.send_key(wid, "shift+tab")
         if ok:
             state["handled"] = True
             self.awake.renew()
         self.log(
             f"[win {wid}] {'SENT' if ok else 'SEND FAILED'} Shift+Tab "
-            f"(focused={focused}) :: {details}"
+            f"(focus_changed=False) :: {details}"
         )
         return True
 
@@ -282,16 +303,17 @@ class Monitor:
 
         if self.cfg.dry_run:
             st.last_handled_sig = sig
-            self.log(f"[win {wid}] DRY-RUN: would select tab {tab_id} and send "
+            self.log(f"[win {wid}] DRY-RUN: would send without changing focus "
                      f"{payload!r} (conf={conf:.2f}) :: {details}")
             return
 
-        focused = self.rc.focus_tab(tab_id)       # select the tab
-        ok = self.rc.send_text(wid, payload)      # type answer (+ Enter)
+        if not self._target_still_matches(wid, sig):
+            return
+        ok = self.rc.send_text(wid, payload)
         if ok:
             st.last_handled_sig = sig
             self.guard.record_action()
             st.last_action_ts = time.monotonic()
             self.awake.renew()
         self.log(f"[win {wid}] {'SENT' if ok else 'SEND FAILED'} {payload!r} "
-                 f"(conf={conf:.2f}, focused={focused}) :: {details}")
+                 f"(conf={conf:.2f}, focus_changed=False) :: {details}")

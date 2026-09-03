@@ -23,6 +23,34 @@ class StabilityTests(unittest.TestCase):
 
         self.assertTrue(tracker.is_paused(state))
 
+    def test_claude_activity_timers_do_not_reset_screen_stability(self):
+        prompt = (
+            "Bash command · from the general-purpose agent\n"
+            "flutter test test/deck_api_test.dart\n"
+            "Do you want to proceed?\n"
+            "1. Yes\n"
+            "2. Yes, and don’t ask again for: flutter test *\n"
+            "3. No\n"
+        )
+        first = (
+            "* Smooshing… (34m 16s · ↓ 86.0k tokens)\n"
+            + prompt
+            + "◯ general-purpose  Deck task  6h 46m 13s · ↓ 48.8k tokens"
+        )
+        second = (
+            "* Smooshing… (34m 18s · ↓ 87.4k tokens)\n"
+            + prompt
+            + "◯ general-purpose  Deck task  6h 46m 15s · ↓ 49.1k tokens"
+        )
+
+        self.assertEqual(signature(first, 40), signature(second, 40))
+
+        tracker = StabilityTracker(stable_polls=2, capture_lines=40)
+        tracker.update(1, first)
+        state, _signature = tracker.update(1, second)
+
+        self.assertTrue(tracker.is_paused(state))
+
     def test_tmux_padding_does_not_hide_decision_prompt(self):
         screen = (
             "Do you want to proceed?\n"

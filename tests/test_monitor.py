@@ -3,7 +3,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from kitty_tab_monitor.detector import WindowState
+from kitty_tab_monitor.detector import WindowState, signature
 from kitty_tab_monitor.monitor import Monitor
 
 
@@ -13,6 +13,7 @@ class FakeRC:
         self.send_error = send_error
         self.focused_tabs = []
         self.sent = []
+        self.screen_text = "prompt"
 
     def focus_tab(self, tab_id):
         self.focused_tabs.append(tab_id)
@@ -23,6 +24,9 @@ class FakeRC:
         if self.send_error:
             raise self.send_error
         return self.send_ok
+
+    def get_text(self, _window_id, extent="screen"):
+        return self.screen_text
 
 
 def make_config(**overrides):
@@ -91,7 +95,7 @@ class MonitorActionTests(unittest.TestCase):
 
         self.assertEqual(
             messages[0],
-            "starting: version=0.2.0 build_date=2026-09-01 model=test-model "
+            "starting: version=0.2.1 build_date=2026-09-03 model=test-model "
             "dry_run=False poll=1.0s socket=(auto-discover) "
             "auto_fallback=120s "
             "keep_awake=disabled lease=600s",
@@ -105,7 +109,6 @@ class MonitorActionTests(unittest.TestCase):
         messages = []
         monitor = self.make_monitor(logger=messages.append)
         monitor.rc = Mock()
-        monitor.rc.focus_tab.return_value = True
         monitor.rc.send_key.return_value = True
         monitor.awake = Mock()
         window = {"window_id": 11, "tab_id": 4}
@@ -114,6 +117,7 @@ class MonitorActionTests(unittest.TestCase):
             "Error: claude-opus-5 is temporarily unavailable (rate-limited), so "
             "auto mode cannot determine the safety of Agent right now."
         )
+        monitor.rc.get_text.return_value = screen
 
         self.assertTrue(monitor._recover_from_auto_mode_rate_limit(window, screen))
         self.assertTrue(monitor._recover_from_auto_mode_rate_limit(window, screen))
@@ -122,7 +126,7 @@ class MonitorActionTests(unittest.TestCase):
         self.assertTrue(monitor._recover_from_auto_mode_rate_limit(window, screen))
         self.assertTrue(monitor._recover_from_auto_mode_rate_limit(window, screen))
 
-        monitor.rc.focus_tab.assert_called_once_with(4)
+        monitor.rc.focus_tab.assert_not_called()
         monitor.rc.send_key.assert_called_once_with(11, "shift+tab")
         monitor.awake.renew.assert_called_once_with()
         details = json.loads(messages[-1].split(" :: ", 1)[1])
@@ -266,14 +270,15 @@ class MonitorActionTests(unittest.TestCase):
             "workspace": "/repo",
             "cwd": "/repo/src",
         }
-        monitor._handle(window, state, "screen-a", "prompt", "agent")
+        screen_sig = signature("prompt", monitor.cfg.capture_lines)
+        monitor._handle(window, state, screen_sig, "prompt", "agent")
 
         decide_mock.assert_called_once_with(
             monitor.cfg, "agent", "prompt", "/repo", "/repo/src", "local"
         )
-        self.assertEqual(monitor.rc.focused_tabs, [4])
+        self.assertEqual(monitor.rc.focused_tabs, [])
         self.assertEqual(monitor.rc.sent, [(11, "1\r")])
-        self.assertEqual(state.last_handled_sig, "screen-a")
+        self.assertEqual(state.last_handled_sig, screen_sig)
         self.assertGreater(state.last_action_ts, 0)
         monitor.awake.renew.assert_called_once_with()
         details = json.loads(messages[-1].split(" :: ", 1)[1])
@@ -285,8 +290,11 @@ class MonitorActionTests(unittest.TestCase):
     def test_send_failure_leaves_prompt_retryable(self, _decide):
         monitor = self.make_monitor(send_ok=False)
         state = WindowState()
+        screen_sig = signature("prompt", monitor.cfg.capture_lines)
 
-        monitor._handle({"window_id": 11, "tab_id": 4}, state, "screen-a", "prompt", "agent")
+        monitor._handle(
+            {"window_id": 11, "tab_id": 4}, state, screen_sig, "prompt", "agent"
+        )
 
         self.assertEqual(state.last_handled_sig, "")
         self.assertEqual(state.last_action_ts, 0)
@@ -296,14 +304,35 @@ class MonitorActionTests(unittest.TestCase):
     def test_send_exception_leaves_prompt_retryable(self, _decide):
         monitor = self.make_monitor(send_error=TimeoutError("kitty timed out"))
         state = WindowState()
+        screen_sig = signature("prompt", monitor.cfg.capture_lines)
 
         with self.assertRaises(TimeoutError):
             monitor._handle(
-                {"window_id": 11, "tab_id": 4}, state, "screen-a", "prompt", "agent"
+                {"window_id": 11, "tab_id": 4}, state, screen_sig, "prompt", "agent"
             )
 
         self.assertEqual(state.last_handled_sig, "")
         self.assertEqual(state.last_action_ts, 0)
+
+    @patch("kitty_tab_monitor.monitor.decide", return_value=(decision, None))
+    def test_changed_target_screen_blocks_stale_llm_answer(self, _decide):
+        messages = []
+        monitor = self.make_monitor(logger=messages.append)
+        monitor.rc.screen_text = "command already running"
+        state = WindowState()
+        prompt = "Do you want to proceed?\n1. Yes\n2. No"
+
+        monitor._handle(
+            {"window_id": 11, "tab_id": 4},
+            state,
+            signature(prompt, monitor.cfg.capture_lines),
+            prompt,
+            "agent",
+        )
+
+        self.assertEqual(monitor.rc.sent, [])
+        self.assertEqual(state.last_handled_sig, "")
+        self.assertIn("target changed -> not sending", messages[-1])
 
     @patch("kitty_tab_monitor.monitor.decide")
     def test_rate_limit_defers_decision(self, decide_mock):

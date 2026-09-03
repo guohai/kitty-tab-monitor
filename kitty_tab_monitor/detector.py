@@ -39,6 +39,16 @@ _TMUX_STATUS_LINE = re.compile(
     r"(?:\s+\d{1,2}-[A-Za-z]{3}-\d{2,4})?\s*$"
 )
 
+# Claude keeps these counters moving while a subagent approval menu is waiting.
+# Normalize only elapsed values followed by its activity separator so ordinary
+# command output containing durations still participates in stability checks.
+_CLAUDE_ACTIVITY_ELAPSED = re.compile(
+    r"(?<![\w.])(?:(?:\d+\s*h\s*)?(?:\d+\s*m\s*)?\d+\s*s)(?=\s*·)"
+)
+_CLAUDE_ACTIVITY_TOKENS = re.compile(
+    r"(?P<marker>·\s*[↓↑]\s*)\d+(?:\.\d+)?[kKmM]?\s+tokens\b"
+)
+
 
 def _tail(text: str, n: int) -> str:
     lines = [ln.rstrip() for ln in text.splitlines()]
@@ -48,7 +58,7 @@ def _tail(text: str, n: int) -> str:
 
 
 def _stable_tail(text: str, n: int) -> str:
-    """Remove a changing tmux status line before hashing terminal content."""
+    """Remove volatile terminal UI details before hashing terminal content."""
     lines = [line.rstrip() for line in text.splitlines()]
     while lines and not lines[-1].strip():
         lines.pop()
@@ -56,7 +66,12 @@ def _stable_tail(text: str, n: int) -> str:
         lines.pop()
         while lines and not lines[-1].strip():
             lines.pop()
-    return "\n".join(lines[-n:])
+    normalized = []
+    for line in lines[-n:]:
+        line = _CLAUDE_ACTIVITY_ELAPSED.sub("<elapsed>", line)
+        line = _CLAUDE_ACTIVITY_TOKENS.sub(r"\g<marker><tokens>", line)
+        normalized.append(line)
+    return "\n".join(normalized)
 
 
 def signature(text: str, n: int) -> str:

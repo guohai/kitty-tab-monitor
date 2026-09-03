@@ -2,8 +2,8 @@
 
 Watches every kitty tab, detects the ones that have **gone quiet while waiting for a
 decision** (a numbered menu, `y/n`, `continue?`, a trailing `?`), sends the last lines
-to an LLM, and then **selects that tab and types the LLM's answer + Enter** — fully
-automatically.
+to an LLM, and then **types the LLM's answer + Enter directly into that window without
+changing your focused tab** — fully automatically.
 
 Built for the case where you have several agents/CLIs running across tabs (e.g. Claude
 Code permission prompts, `apt` `[Y/n]`, interactive installers) and you don't want to
@@ -12,7 +12,7 @@ babysit them.
 ```
 ❯ 1. Yes            <-  tab goes idle showing this
   2. No                 monitor detects "paused + decision", asks the LLM,
-                        focuses the tab, types "1<Enter>"
+                        types "1<Enter>" without changing focus
 ```
 
 ## How it works
@@ -26,7 +26,10 @@ babysit them.
 4. **LLM decision** — the last lines, current directory, and workspace go to an
    OpenAI-compatible endpoint, which returns JSON:
    `{is_waiting, action, text_to_send, press_enter, confidence, reason}`.
-5. **Act** — `kitty @ focus-tab` then `kitty @ send-text` types the answer (+ Enter).
+5. **Act** — `kitty @ send-text --match id:<window>` types the answer (+ Enter) directly
+   into the target window without changing the active OS window, kitty tab, or pane. The
+   monitor first re-reads that window and aborts if the approval screen has changed since
+   the LLM request began.
 6. **Keep awake** — activity in any monitored tab renews one shared 10-minute system-sleep
    lease. Stable screens that show a known running task also renew it, even without output.
 
@@ -145,7 +148,7 @@ custom socket path or when more than one kitty instance is running.
 | key | meaning |
 |-----|---------|
 | `model` | model name your endpoint accepts (this setup uses `gpt-5.5`) |
-| `poll_interval` | seconds between passes |
+| `poll_interval` | seconds between passes (default: 2) |
 | `stable_polls` | identical screens in a row before a tab counts as "paused" |
 | `capture_lines` | how many trailing lines are sent to the LLM |
 | `auto_mode_fallback_seconds` | delay before one-time `Shift+Tab` recovery (default: 120) |

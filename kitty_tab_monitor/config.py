@@ -39,7 +39,7 @@ class Config:
     model: str = "gpt-4o-mini"                  # cheap + fast; good for frequent polling
 
     # --- polling / pause detection ---
-    poll_interval: float = 1.0                  # seconds between passes
+    poll_interval: float = 2.0                  # seconds between passes
     stable_polls: int = 2                       # identical screens in a row => "paused"
     capture_lines: int = 40                     # last N lines sent to the LLM
     auto_mode_fallback_seconds: float = 120.0    # switch to manual after classifier outage

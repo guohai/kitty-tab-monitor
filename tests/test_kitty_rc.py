@@ -140,6 +140,19 @@ class KittyRCTests(unittest.TestCase):
             ["send-key", "--match", "id:17", "shift+tab"],
         )
 
+    @patch("kitty_tab_monitor.kitty_rc.subprocess.run")
+    def test_send_text_targets_exact_window_without_focusing(self, run):
+        run.return_value = SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+        sent = KittyRC(socket="unix:/tmp/kitty-123").send_text(17, "2\r")
+
+        self.assertTrue(sent)
+        self.assertEqual(
+            run.call_args.args[0][-4:],
+            ["send-text", "--match", "id:17", "--stdin"],
+        )
+        self.assertEqual(run.call_args.kwargs["input"], b"2\r")
+
 
 if __name__ == "__main__":
     unittest.main()
