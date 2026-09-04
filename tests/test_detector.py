@@ -10,18 +10,34 @@ from kitty_tab_monitor.detector import (
 
 
 class StabilityTests(unittest.TestCase):
-    def test_tmux_clock_does_not_reset_screen_stability(self):
+    def test_tmux_status_line_does_not_reset_screen_stability(self):
         prompt = "Do you want to proceed?\n1. Yes\n2. No\n\n"
-        first = prompt + '[vox_eval]0:claude* 1:zsh- "task" 23:40 24-Aug-26'
-        second = prompt + '[vox_eval]0:claude* 1:zsh- "task" 23:41 24-Aug-26'
+        status_pairs = (
+            (
+                '[session_a]0:claude* 1:zsh- "task" 23:40 24-Aug-26',
+                '[session_a]0:claude* 1:zsh- "task" 23:41 24-Aug-26',
+            ),
+            (
+                '[session_b] 0:claude* 1:zsh- "task" 07:29 04-Sep-26',
+                '[session_b] 0:claude* 1:zsh- "task" 07:30 04-Sep-26',
+            ),
+            (
+                "[session_c] 2:agent* 3:shell- host=devbox load=10%",
+                "[session_c] 2:agent* 3:shell- host=devbox load=11%",
+            ),
+        )
+        for first_status, second_status in status_pairs:
+            with self.subTest(status=first_status):
+                first = prompt + first_status
+                second = prompt + second_status
 
-        self.assertEqual(signature(first, 40), signature(second, 40))
+                self.assertEqual(signature(first, 40), signature(second, 40))
 
-        tracker = StabilityTracker(stable_polls=2, capture_lines=40)
-        tracker.update(1, first)
-        state, _signature = tracker.update(1, second)
+                tracker = StabilityTracker(stable_polls=2, capture_lines=40)
+                tracker.update(1, first)
+                state, _signature = tracker.update(1, second)
 
-        self.assertTrue(tracker.is_paused(state))
+                self.assertTrue(tracker.is_paused(state))
 
     def test_claude_activity_timers_do_not_reset_screen_stability(self):
         prompt = (
@@ -57,7 +73,7 @@ class StabilityTests(unittest.TestCase):
             "1. Yes\n"
             "2. No\n"
             + ("\n" * 20)
-            + '[vox_eval]0:claude* 1:zsh- "task" 00:18 25-Aug-26'
+            + '[session_a]0:claude* 1:zsh- "task" 00:18 25-Aug-26'
         )
 
         self.assertTrue(looks_like_decision(screen)[0])
@@ -66,7 +82,7 @@ class StabilityTests(unittest.TestCase):
         screen = (
             "Password:\n"
             + ("\n" * 20)
-            + '[vox_eval]0:claude* 1:zsh- "task" 00:18 25-Aug-26'
+            + '[session_a]0:claude* 1:zsh- "task" 00:18 25-Aug-26'
         )
 
         self.assertTrue(looks_like_password(screen))

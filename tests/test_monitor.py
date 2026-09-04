@@ -95,7 +95,7 @@ class MonitorActionTests(unittest.TestCase):
 
         self.assertEqual(
             messages[0],
-            "starting: version=0.2.1 build_date=2026-09-03 model=test-model "
+            "starting: version=0.2.2 build_date=2026-09-04 model=test-model "
             "dry_run=False poll=1.0s socket=(auto-discover) "
             "auto_fallback=120s "
             "keep_awake=disabled lease=600s",

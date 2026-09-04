@@ -34,10 +34,9 @@ _AUTO_MODE_RATE_LIMIT = re.compile(
     r"auto mode cannot determine the safety"
 )
 
-_TMUX_STATUS_LINE = re.compile(
-    r"^\[[^\]\r\n]+\]\d+:\S.*\b\d{1,2}:\d{2}"
-    r"(?:\s+\d{1,2}-[A-Za-z]{3}-\d{2,4})?\s*$"
-)
+# Match tmux's structural `[session] window-index:window-name` prefix. The
+# session name and everything on the right side are user-configurable.
+_TMUX_STATUS_LINE = re.compile(r"^\[[^\]\r\n]+\]\s*\d+:\S")
 
 # Claude keeps these counters moving while a subagent approval menu is waiting.
 # Normalize only elapsed values followed by its activity separator so ordinary
